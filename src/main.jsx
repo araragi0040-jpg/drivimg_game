@@ -555,12 +555,14 @@ function App() {
         const turnRate = state.vehicle === 'CAR' ? 1.2 : 2.4; // normalized range per second
         ctl.steerInput = clamp(ctl.steerInput + direction * turnRate * dt, -1, 1);
       } else if (!ctl.steeringDragging && !ctl.keyLeft && !ctl.keyRight) {
-        // Real-ish self-centering: weak while stationary, stronger while moving.
+        // Quick self-centering after release. It still eases instead of snapping,
+        // but returns close to 0 in roughly 0.3–0.6 s depending on speed.
         const kph = Math.abs(state.speed) * 3.6;
         const returnRate = state.vehicle === 'CAR'
-          ? .12 + clamp(kph / 75, 0, 1) * 1.75
-          : .55 + clamp(kph / 55, 0, 1) * 2.1;
+          ? 4.4 + clamp(kph / 80, 0, 1) * 3.0
+          : 6.2 + clamp(kph / 65, 0, 1) * 3.4;
         ctl.steerInput = damp(ctl.steerInput, 0, returnRate, dt);
+        if (Math.abs(ctl.steerInput) < .004) ctl.steerInput = 0;
       }
 
       const maxInputDeg = state.vehicle === 'CAR' ? CAR_WHEEL_MAX : SCOOTER_BAR_MAX;
@@ -601,7 +603,7 @@ function App() {
       if (Math.abs(state.speed) < .025) state.speed = 0;
 
       // Steering rack: actual road-wheel angle from steering-wheel position.
-      const roadWheelMaxDeg = state.vehicle === 'CAR' ? 34 : 29;
+      const roadWheelMaxDeg = state.vehicle === 'CAR' ? 34 : 34;
       const rackTarget = ctl.steerInput;
       state.steeringRack = damp(state.steeringRack, rackTarget, state.vehicle === 'CAR' ? 12 : 16, dt);
       const roadWheelAngle = THREE.MathUtils.degToRad(state.steeringRack * roadWheelMaxDeg);
@@ -610,7 +612,7 @@ function App() {
         const wheelbase = state.vehicle === 'CAR' ? 2.72 : 1.38;
         let yawRate = (state.speed / wheelbase) * Math.tan(roadWheelAngle);
         // lateral acceleration cap makes high-speed steering less arcade-like without changing steering ratio.
-        const maxLatAccel = state.vehicle === 'CAR' ? 7.2 : 5.3;
+        const maxLatAccel = state.vehicle === 'CAR' ? 7.2 : 8.8;
         const maxYawByGrip = maxLatAccel / Math.max(Math.abs(state.speed), 2.2);
         yawRate = clamp(yawRate, -maxYawByGrip, maxYawByGrip);
         state.heading += yawRate * dt;
@@ -650,7 +652,7 @@ function App() {
         const travel = state.speed * dt;
         scooter.userData.wheels.forEach(w => { w.rotation.x -= travel / .35; });
         // gentle lean for scooter only
-        scooter.rotation.z = damp(scooter.rotation.z, -state.steeringRack * clamp(Math.abs(state.speed) / 18, 0, 1) * .18, 5, dt);
+        scooter.rotation.z = damp(scooter.rotation.z, -state.steeringRack * clamp(Math.abs(state.speed) / 18, 0, 1) * .22, 6, dt);
       }
 
       forward.set(fwdX, 0, fwdZ);

@@ -1,7 +1,7 @@
 {
-  "name": "street-drive-v003",
+  "name": "street-drive-v003-1",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.3-1",
   "type": "module",
   "scripts": {
     "dev": "vite",
