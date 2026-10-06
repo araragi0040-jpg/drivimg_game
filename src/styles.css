@@ -1,0 +1,78 @@
+:root { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #fff; background:#111; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #root { width:100%; height:100%; margin:0; overflow:hidden; overscroll-behavior:none; }
+button { font: inherit; color:inherit; }
+.app { position:relative; width:100%; height:100%; min-height:100dvh; background:#101418; user-select:none; touch-action:none; overflow:hidden; }
+.stage { position:absolute; inset:0; }
+.stage canvas { width:100%; height:100%; display:block; }
+.vignette { position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 50% 48%, transparent 54%, rgba(0,0,0,.24) 100%); }
+.topbar { position:absolute; top:max(12px, env(safe-area-inset-top)); left:max(14px, env(safe-area-inset-left)); right:max(14px, env(safe-area-inset-right)); display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+.pill { pointer-events:auto; display:flex; gap:10px; align-items:center; padding:9px 15px; border-radius:14px; background:linear-gradient(180deg, rgba(35,39,45,.93), rgba(14,17,21,.92)); border:2px solid rgba(255,255,255,.45); box-shadow:0 5px 18px rgba(0,0,0,.35), inset 0 0 14px rgba(255,255,255,.09); font-size:clamp(16px,2.1vw,28px); text-shadow:0 2px 3px #000; }
+.iconBtn { pointer-events:auto; width:52px; height:52px; border-radius:50%; border:2px solid rgba(255,255,255,.5); background:rgba(24,28,31,.8); font-weight:900; font-size:22px; box-shadow:0 5px 15px rgba(0,0,0,.35); }
+.mirrorFrame { position:absolute; top:14px; left:50%; transform:translateX(-50%); width:min(28vw,420px); aspect-ratio:3.7/1; border:6px solid #25282b; border-radius:26px; box-shadow:0 3px 0 #6e7478 inset, 0 5px 14px rgba(0,0,0,.45); pointer-events:none; }
+.leftHud { position:absolute; left:max(18px, env(safe-area-inset-left)); top:22%; display:flex; flex-direction:column; align-items:center; gap:10px; }
+.resetBtn { width:58px; height:58px; border-radius:50%; border:2px solid rgba(255,255,255,.38); background:rgba(20,24,28,.75); font-size:31px; box-shadow:0 5px 14px rgba(0,0,0,.32); }
+.missionCard { width:76px; min-height:108px; border-radius:17px; background:linear-gradient(180deg, rgba(34,39,45,.9), rgba(22,25,29,.92)); border:2px solid rgba(255,255,255,.28); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; box-shadow:0 6px 17px rgba(0,0,0,.35); font-weight:900; }
+.missionCard .star { color:#f4ca59; font-size:30px; text-shadow:0 2px 3px #000; }
+.missionCard small { font-size:10px; opacity:.7; }
+.wheelCluster { position:absolute; left:max(10px, env(safe-area-inset-left)); bottom:max(14px, env(safe-area-inset-bottom)); width:min(28vw,290px); aspect-ratio:1; }
+.wheel { position:absolute; inset:0; border-radius:50%; border:17px solid rgba(25,28,31,.94); box-shadow:inset 0 0 0 4px rgba(255,255,255,.08), 0 10px 25px rgba(0,0,0,.38); transition:transform .06s linear; }
+.wheel:after { content:""; position:absolute; inset:17%; border-radius:50%; border:4px solid rgba(255,255,255,.08); }
+.spoke { position:absolute; left:50%; top:50%; width:11%; height:44%; transform-origin:50% 0; background:linear-gradient(#32373d,#181b1e); border-radius:8px; }
+.s1 { transform:rotate(0deg) translate(-50%,0); }
+.s2 { transform:rotate(120deg) translate(-50%,0); }
+.s3 { transform:rotate(240deg) translate(-50%,0); }
+.hub { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:35%; aspect-ratio:1; border-radius:50%; display:grid; place-items:center; background:#24282d; border:3px solid #444b52; color:#7b838b; font-size:11px; font-weight:900; letter-spacing:.08em; z-index:2; }
+.steerTouch { position:absolute; top:0; bottom:0; width:50%; display:flex; align-items:center; font-size:52px; font-weight:300; color:rgba(255,255,255,.12); z-index:5; }
+.steerLeft { left:0; justify-content:flex-start; padding-left:4px; }
+.steerRight { right:0; justify-content:flex-end; padding-right:4px; }
+.speedPanel { position:absolute; left:50%; bottom:max(18px, env(safe-area-inset-bottom)); transform:translateX(-50%); min-width:285px; height:78px; padding:8px 20px; border-radius:26px 26px 10px 10px; background:linear-gradient(180deg, rgba(28,32,37,.94), rgba(10,13,16,.96)); border:3px solid rgba(255,255,255,.23); box-shadow:0 8px 18px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; gap:10px; }
+.speedValue { font-size:clamp(38px,5vw,66px); font-weight:500; font-variant-numeric:tabular-nums; letter-spacing:.04em; line-height:1; }
+.speedUnit { font-size:12px; align-self:flex-start; margin-top:15px; opacity:.72; }
+.turnArrow { opacity:.42; font-size:20px; }
+.minimap { position:absolute; right:max(25vw, 260px); bottom:max(18px, env(safe-area-inset-bottom)); width:116px; height:154px; background:rgba(239,242,245,.96); border:4px solid #14171a; border-radius:18px; overflow:hidden; box-shadow:0 8px 18px rgba(0,0,0,.28); color:#111; }
+.mapInner { position:absolute; inset:0; background:#e6eee7; overflow:hidden; }
+.roadH,.roadV { position:absolute; background:#fff; box-shadow:0 0 0 1px #cfd5d8 inset; }
+.roadH { left:0; width:100%; height:9%; transform:translateY(-50%); }
+.roadV { top:0; height:100%; width:9%; transform:translateX(-50%); }
+.carDot { position:absolute; z-index:3; color:#1588f2; font-size:23px; text-shadow:0 1px 2px #fff; transition:left .08s linear, top .08s linear, transform .08s linear; }
+.mapLabel { position:absolute; left:8px; bottom:6px; font-size:10px; font-weight:900; background:rgba(255,255,255,.85); padding:2px 4px; border-radius:4px; }
+.gearBox { position:absolute; right:max(5.5vw, 64px); top:20%; width:72px; padding:9px; border-radius:18px; background:linear-gradient(180deg, rgba(29,33,37,.92), rgba(12,15,18,.94)); border:2px solid rgba(255,255,255,.15); display:flex; flex-direction:column; gap:6px; box-shadow:0 7px 17px rgba(0,0,0,.35); }
+.gearBox button { height:50px; border:0; border-radius:11px; background:transparent; font-size:24px; font-weight:900; opacity:.45; }
+.gearBox button.active { opacity:1; background:linear-gradient(180deg,#ecebe6,#9da09d); color:#fff7d1; text-shadow:0 2px 3px #5e5539; box-shadow:inset 0 0 0 2px rgba(255,255,255,.6), 0 2px 7px rgba(0,0,0,.45); }
+.pedals { position:absolute; right:max(18px, env(safe-area-inset-right)); bottom:max(12px, env(safe-area-inset-bottom)); display:flex; align-items:flex-end; gap:18px; }
+.pedal { width:100px; height:150px; border:none; border-radius:24px 24px 14px 14px; background:linear-gradient(180deg, rgba(42,46,51,.92), rgba(20,23,27,.96)); box-shadow:0 9px 19px rgba(0,0,0,.4), inset 0 0 0 2px rgba(255,255,255,.09); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+.pedal span { font-size:76px; line-height:.65; transform:rotate(90deg); opacity:.85; }
+.pedal b { font-size:13px; letter-spacing:.05em; }
+.pedal.brake { height:112px; width:102px; }
+.pedal:active { transform:translateY(4px) scale(.98); filter:brightness(1.18); }
+.help { position:absolute; left:50%; top:91%; transform:translate(-50%,-50%); font-size:11px; background:rgba(0,0,0,.28); padding:5px 9px; border-radius:10px; opacity:.7; pointer-events:none; }
+.pauseOverlay { position:absolute; inset:0; display:grid; place-content:center; gap:18px; background:rgba(4,6,8,.55); backdrop-filter:blur(5px); font-size:44px; font-weight:900; letter-spacing:.12em; text-align:center; }
+.pauseOverlay button { border:0; padding:13px 26px; border-radius:999px; background:#fff; color:#111; font-weight:800; font-size:16px; }
+.landscapeHint { display:none; }
+
+@media (max-width: 900px) {
+  .mirrorFrame { width:31vw; border-width:4px; }
+  .leftHud { top:19%; transform:scale(.86); transform-origin:left top; }
+  .wheelCluster { width:29vw; max-width:235px; }
+  .wheel { border-width:12px; }
+  .speedPanel { min-width:240px; height:65px; padding:5px 14px; }
+  .speedValue { font-size:43px; }
+  .minimap { width:94px; height:124px; right:24vw; }
+  .gearBox { right:5vw; top:18%; width:58px; padding:6px; }
+  .gearBox button { height:39px; font-size:19px; }
+  .pedals { gap:10px; }
+  .pedal { width:78px; height:126px; border-radius:18px; }
+  .pedal.brake { width:78px; height:92px; }
+  .pedal span { font-size:58px; }
+  .help { display:none; }
+}
+
+@media (orientation: portrait) {
+  .landscapeHint { display:block; position:absolute; left:50%; top:11%; transform:translateX(-50%); z-index:20; background:rgba(10,13,16,.78); border:1px solid rgba(255,255,255,.22); border-radius:999px; padding:9px 14px; font-size:12px; white-space:nowrap; }
+  .wheelCluster { width:42vw; }
+  .minimap { right:18px; bottom:190px; }
+  .gearBox { right:18px; top:18%; }
+  .pedals { right:12px; }
+  .speedPanel { bottom:160px; min-width:210px; }
+}
