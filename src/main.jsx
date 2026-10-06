@@ -6,24 +6,42 @@ import './styles.css';
 const WORLD_SIZE = 150;
 const ROAD_W = 12;
 const ROAD_CENTERS = [-42, 0, 42];
-const MAX_FORWARD = 30; // m/s-ish, displayed as km/h after conversion
+const MAX_FORWARD = 30;
 const MAX_REVERSE = 9;
+const MAX_WHEEL_DEG = 180;
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function damp(current, target, lambda, dt) {
   return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
 }
+function normalizeDeg(delta) {
+  let d = delta;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
 
 function App() {
   const mountRef = useRef(null);
   const gameRef = useRef({});
-  const controlsRef = useRef({ left: false, right: false, accel: false, brake: false });
+  const controlsRef = useRef({
+    keyLeft: false,
+    keyRight: false,
+    accel: false,
+    brake: false,
+    wheelSteer: 0,
+    wheelDragging: false,
+  });
+  const wheelDragRef = useRef({ active: false, pointerId: null, lastAngle: 0, rotation: 0 });
+
   const [speedKmh, setSpeedKmh] = useState(0);
   const [gear, setGear] = useState('D');
   const [elapsed, setElapsed] = useState(0);
-  const [steerVisual, setSteerVisual] = useState(0);
+  const [wheelDeg, setWheelDeg] = useState(0);
   const [carPos, setCarPos] = useState({ x: 0, z: 30, heading: 0 });
   const [paused, setPaused] = useState(false);
+  const [accelPressed, setAccelPressed] = useState(false);
+  const [brakePressed, setBrakePressed] = useState(false);
 
   const mapRoads = useMemo(() => ROAD_CENTERS.map(v => (v / WORLD_SIZE) * 100 + 50), []);
 
@@ -32,11 +50,11 @@ function App() {
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x9dc7df);
-    scene.fog = new THREE.Fog(0x9dc7df, 70, 165);
+    scene.background = new THREE.Color(0xa7cce2);
+    scene.fog = new THREE.Fog(0xa7cce2, 72, 170);
 
-    const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 400);
-    const rearCamera = new THREE.PerspectiveCamera(52, 2.8, 0.1, 220);
+    const camera = new THREE.PerspectiveCamera(61, 1, 0.1, 400);
+    const rearCamera = new THREE.PerspectiveCamera(54, 3.05, 0.1, 220);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
     renderer.shadowMap.enabled = true;
@@ -44,10 +62,10 @@ function App() {
     renderer.autoClear = false;
     mount.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xd9efff, 0x4a5560, 2.0);
+    const hemi = new THREE.HemisphereLight(0xe8f6ff, 0x55616d, 2.1);
     scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-    sun.position.set(30, 55, 10);
+    const sun = new THREE.DirectionalLight(0xffffff, 2.35);
+    sun.position.set(34, 58, 14);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -80;
@@ -58,16 +76,16 @@ function App() {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE),
-      new THREE.MeshStandardMaterial({ color: 0x6e7e67, roughness: 1 })
+      new THREE.MeshStandardMaterial({ color: 0x76866f, roughness: 1 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Roads
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x4e555b, roughness: 0.95 });
-    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xb6babd, roughness: 1 });
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0xf4f0c6 });
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x50575d, roughness: 0.97 });
+    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xb8bdc0, roughness: 1 });
+    const curbMat = new THREE.MeshStandardMaterial({ color: 0xd2d4d3, roughness: 1 });
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xf6f2cf });
 
     function addRoad(horizontal, center) {
       const road = new THREE.Mesh(
@@ -78,17 +96,29 @@ function App() {
       road.receiveShadow = true;
       scene.add(road);
 
-      // sidewalks
       [-1, 1].forEach(side => {
         const sw = new THREE.Mesh(
           new THREE.BoxGeometry(horizontal ? WORLD_SIZE : 2.2, 0.25, horizontal ? 2.2 : WORLD_SIZE), sidewalkMat
         );
-        sw.position.set(horizontal ? 0 : center + side * (ROAD_W / 2 + 1.1), 0.12, horizontal ? center + side * (ROAD_W / 2 + 1.1) : 0);
+        sw.position.set(
+          horizontal ? 0 : center + side * (ROAD_W / 2 + 1.1),
+          0.12,
+          horizontal ? center + side * (ROAD_W / 2 + 1.1) : 0
+        );
         sw.receiveShadow = true;
         scene.add(sw);
+
+        const curb = new THREE.Mesh(
+          new THREE.BoxGeometry(horizontal ? WORLD_SIZE : 0.22, 0.18, horizontal ? 0.22 : WORLD_SIZE), curbMat
+        );
+        curb.position.set(
+          horizontal ? 0 : center + side * (ROAD_W / 2 + 0.12),
+          0.12,
+          horizontal ? center + side * (ROAD_W / 2 + 0.12) : 0
+        );
+        scene.add(curb);
       });
 
-      // dashed center line
       for (let p = -WORLD_SIZE / 2 + 4; p < WORLD_SIZE / 2; p += 8) {
         const dash = new THREE.Mesh(
           new THREE.PlaneGeometry(horizontal ? 3.4 : 0.16, horizontal ? 0.16 : 3.4), lineMat
@@ -100,9 +130,8 @@ function App() {
     }
     ROAD_CENTERS.forEach(c => { addRoad(true, c); addRoad(false, c); });
 
-    // Buildings + collision boxes
     const colliders = [];
-    const palette = [0xd7d8dc, 0xc8d0d5, 0xe0d3c5, 0xbcc9c1, 0xc5c2d3, 0xd5c5bd];
+    const palette = [0xd8dade, 0xcbd2d7, 0xdfd4c8, 0xc0ccc4, 0xcac6d5, 0xd8c8c0];
     const blocks = [-63, -21, 21, 63];
     let bi = 0;
     blocks.forEach(cx => {
@@ -110,8 +139,8 @@ function App() {
         const w = 20 + ((bi * 7) % 10);
         const d = 19 + ((bi * 5) % 11);
         const h = 12 + ((bi * 13) % 26);
-        bi++;
-        const mat = new THREE.MeshStandardMaterial({ color: palette[bi % palette.length], roughness: 0.8, metalness: 0.05 });
+        bi += 1;
+        const mat = new THREE.MeshStandardMaterial({ color: palette[bi % palette.length], roughness: 0.82, metalness: 0.04 });
         const building = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
         building.position.set(cx, h / 2 + 0.25, cz);
         building.castShadow = true;
@@ -119,43 +148,57 @@ function App() {
         scene.add(building);
         colliders.push({ minX: cx - w / 2 - 1.2, maxX: cx + w / 2 + 1.2, minZ: cz - d / 2 - 1.2, maxZ: cz + d / 2 + 1.2 });
 
-        // rooftop detail
-        const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 0.45, 1.2, d * 0.35), new THREE.MeshStandardMaterial({ color: 0x7b858b }));
+        const roof = new THREE.Mesh(
+          new THREE.BoxGeometry(w * 0.45, 1.2, d * 0.35),
+          new THREE.MeshStandardMaterial({ color: 0x7d878d })
+        );
         roof.position.set(cx, h + 0.85, cz);
         roof.castShadow = true;
         scene.add(roof);
       });
     });
 
-    // trees / street furniture
-    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x6a4a2b });
-    const treeLeafMat = new THREE.MeshStandardMaterial({ color: 0x4f8a4d });
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4b2d });
+    const treeLeafMat = new THREE.MeshStandardMaterial({ color: 0x4f8c50 });
     function addTree(x, z) {
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.4, 8), treeTrunkMat);
-      trunk.position.set(x, 1.2, z); trunk.castShadow = true; scene.add(trunk);
+      trunk.position.set(x, 1.2, z);
+      trunk.castShadow = true;
+      scene.add(trunk);
       const crown = new THREE.Mesh(new THREE.SphereGeometry(1.25, 10, 8), treeLeafMat);
-      crown.position.set(x, 3.0, z); crown.castShadow = true; scene.add(crown);
+      crown.position.set(x, 3.0, z);
+      crown.castShadow = true;
+      scene.add(crown);
     }
     [-58, -28, 28, 58].forEach(x => { addTree(x, -7.7); addTree(x, 7.7); });
     [-58, -28, 28, 58].forEach(z => { addTree(-7.7, z); addTree(7.7, z); });
 
-    // Car
     const car = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1d2635, metalness: 0.45, roughness: 0.35 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0x19222d, metalness: 0.4, roughness: 0.15 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c2735, metalness: 0.48, roughness: 0.32 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x17212c, metalness: 0.35, roughness: 0.12 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.75, 4.3), bodyMat);
-    body.position.y = 0.75; body.castShadow = true; car.add(body);
+    body.position.y = 0.75;
+    body.castShadow = true;
+    car.add(body);
     const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.85, 2.15), glassMat);
-    cabin.position.set(0, 1.3, -0.25); cabin.castShadow = true; car.add(cabin);
+    cabin.position.set(0, 1.3, -0.25);
+    cabin.castShadow = true;
+    car.add(cabin);
+
     const wheelMat = new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 1 });
     [[-1.1,0.45,-1.35],[1.1,0.45,-1.35],[-1.1,0.45,1.35],[1.1,0.45,1.35]].forEach(([x,y,z]) => {
       const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,0.35,16), wheelMat);
-      wheel.rotation.z = Math.PI / 2; wheel.position.set(x,y,z); wheel.castShadow = true; car.add(wheel);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x,y,z);
+      wheel.castShadow = true;
+      car.add(wheel);
     });
-    const tailMat = new THREE.MeshBasicMaterial({ color: 0xff493f });
+
+    const tailMat = new THREE.MeshBasicMaterial({ color: 0xff5047 });
     [-0.7,0.7].forEach(x => {
       const tail = new THREE.Mesh(new THREE.BoxGeometry(0.45,0.18,0.05), tailMat);
-      tail.position.set(x,0.78,2.17); car.add(tail);
+      tail.position.set(x,0.78,2.17);
+      car.add(tail);
     });
     car.position.set(0, 0.02, 30);
     scene.add(car);
@@ -171,6 +214,10 @@ function App() {
     gameRef.current = { scene, camera, renderer, car, state, colliders };
 
     const clock = new THREE.Clock();
+    const forward = new THREE.Vector3();
+    const desiredCam = new THREE.Vector3();
+    const lookAt = new THREE.Vector3();
+    const rearLook = new THREE.Vector3();
     let raf = 0;
 
     function resize() {
@@ -195,8 +242,9 @@ function App() {
       if (state.paused) dt = 0;
 
       const ctl = controlsRef.current;
-      const steerTarget = (ctl.left ? -1 : 0) + (ctl.right ? 1 : 0);
-      state.steer = damp(state.steer, steerTarget, 8, dt);
+      const keyboardSteer = (ctl.keyLeft ? -1 : 0) + (ctl.keyRight ? 1 : 0);
+      const steerTarget = (ctl.keyLeft || ctl.keyRight) ? keyboardSteer : ctl.wheelSteer;
+      state.steer = damp(state.steer, steerTarget, ctl.wheelDragging ? 15 : 7.5, dt);
 
       const accelPower = 13.5;
       const reversePower = 8.5;
@@ -217,8 +265,8 @@ function App() {
           else state.speed -= brakePower * 0.5 * dt;
         }
         state.speed = clamp(state.speed, -MAX_REVERSE, 1.2);
-      } else {
-        if (ctl.brake) state.speed = damp(state.speed, 0, 10, dt);
+      } else if (ctl.brake) {
+        state.speed = damp(state.speed, 0, 10, dt);
       }
 
       if (!ctl.accel) {
@@ -228,9 +276,13 @@ function App() {
       }
       if (Math.abs(state.speed) < 0.035) state.speed = 0;
 
-      const turnFactor = clamp(Math.abs(state.speed) / 6, 0, 1);
       if (Math.abs(state.speed) > 0.08) {
-        state.heading += state.steer * 1.15 * turnFactor * dt * Math.sign(state.speed);
+        const speedRatio = clamp(Math.abs(state.speed) / MAX_FORWARD, 0, 1);
+        const maxSteerRad = THREE.MathUtils.degToRad(29 - speedRatio * 17);
+        const steerAngle = state.steer * maxSteerRad;
+        const wheelbase = 2.72;
+        const yawRate = clamp((state.speed / wheelbase) * Math.tan(steerAngle), -1.25, 1.25);
+        state.heading += yawRate * dt;
       }
 
       const fwdX = Math.sin(state.heading);
@@ -242,23 +294,20 @@ function App() {
         car.position.x = nextX;
         car.position.z = nextZ;
       } else {
-        state.speed *= -0.18;
+        state.speed *= -0.16;
       }
       car.rotation.y = -state.heading;
 
-      // Chase camera
-      const forward = new THREE.Vector3(fwdX, 0, fwdZ);
-      const desiredCam = new THREE.Vector3(car.position.x, 4.6, car.position.z).addScaledVector(forward, -8.6);
+      forward.set(fwdX, 0, fwdZ);
+      desiredCam.set(car.position.x, 4.65, car.position.z).addScaledVector(forward, -8.75);
       camera.position.lerp(desiredCam, 1 - Math.exp(-6 * dt));
-      const lookAt = new THREE.Vector3(car.position.x, 1.1, car.position.z).addScaledVector(forward, 4.2);
+      lookAt.set(car.position.x, 1.08, car.position.z).addScaledVector(forward, 4.25);
       camera.lookAt(lookAt);
 
-      // Rear camera
-      rearCamera.position.set(car.position.x, 2.3, car.position.z).addScaledVector(forward, 1.9);
-      const rearLook = new THREE.Vector3(car.position.x, 1.25, car.position.z).addScaledVector(forward, -18);
+      rearCamera.position.set(car.position.x, 2.28, car.position.z).addScaledVector(forward, 1.9);
+      rearLook.set(car.position.x, 1.22, car.position.z).addScaledVector(forward, -18);
       rearCamera.lookAt(rearLook);
 
-      // Main render
       const w = mount.clientWidth;
       const h = mount.clientHeight;
       renderer.setScissorTest(false);
@@ -266,11 +315,10 @@ function App() {
       renderer.clear(true, true, true);
       renderer.render(scene, camera);
 
-      // Rear-view render in scissor
-      const mirrorW = Math.min(w * 0.28, 420);
-      const mirrorH = mirrorW * 0.27;
+      const mirrorW = Math.min(w * 0.30, 430);
+      const mirrorH = mirrorW * 0.245;
       const mx = (w - mirrorW) / 2;
-      const my = h - mirrorH - 14;
+      const my = h - mirrorH - 12;
       renderer.clearDepth();
       renderer.setScissorTest(true);
       renderer.setScissor(mx, my, mirrorW, mirrorH);
@@ -279,10 +327,10 @@ function App() {
       renderer.setScissorTest(false);
 
       state.lastUi += dt;
-      if (state.lastUi > 0.08) {
+      if (state.lastUi > 0.055) {
         state.lastUi = 0;
         setSpeedKmh(Math.round(Math.abs(state.speed) * 3.6));
-        setSteerVisual(state.steer);
+        if (!wheelDragRef.current.active) setWheelDeg(state.steer * MAX_WHEEL_DEG);
         setCarPos({ x: car.position.x, z: car.position.z, heading: state.heading });
       }
     }
@@ -292,7 +340,7 @@ function App() {
       cancelAnimationFrame(raf);
       ro.disconnect();
       renderer.dispose();
-      mount.removeChild(renderer.domElement);
+      if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, []);
 
@@ -300,18 +348,28 @@ function App() {
     const key = (down) => (e) => {
       const k = e.key.toLowerCase();
       if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' '].includes(k)) e.preventDefault();
-      if (k === 'arrowleft' || k === 'a') controlsRef.current.left = down;
-      if (k === 'arrowright' || k === 'd') controlsRef.current.right = down;
-      if (k === 'arrowup' || k === 'w') controlsRef.current.accel = down;
-      if (k === 'arrowdown' || k === 's' || k === ' ') controlsRef.current.brake = down;
+      if (k === 'arrowleft' || k === 'a') controlsRef.current.keyLeft = down;
+      if (k === 'arrowright' || k === 'd') controlsRef.current.keyRight = down;
+      if (k === 'arrowup' || k === 'w') {
+        controlsRef.current.accel = down;
+        setAccelPressed(down);
+      }
+      if (k === 'arrowdown' || k === 's' || k === ' ') {
+        controlsRef.current.brake = down;
+        setBrakePressed(down);
+      }
       if (down && k === 'r') changeGear('R');
       if (down && k === 'n') changeGear('N');
       if (down && k === 'e') changeGear('D');
     };
-    const kd = key(true), ku = key(false);
+    const kd = key(true);
+    const ku = key(false);
     window.addEventListener('keydown', kd, { passive: false });
     window.addEventListener('keyup', ku, { passive: false });
-    return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); };
+    return () => {
+      window.removeEventListener('keydown', kd);
+      window.removeEventListener('keyup', ku);
+    };
   }, []);
 
   useEffect(() => {
@@ -342,23 +400,83 @@ function App() {
     g.car.position.set(0, 0.02, 30);
     g.state.heading = 0;
     g.state.speed = 0;
+    g.state.steer = 0;
     g.car.rotation.y = 0;
+    controlsRef.current.wheelSteer = 0;
+    wheelDragRef.current.rotation = 0;
+    setWheelDeg(0);
   }
 
-  function bindHold(name) {
+  function bindPedal(name, setter) {
     return {
-      onPointerDown: (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); controlsRef.current[name] = true; },
-      onPointerUp: (e) => { e.preventDefault(); controlsRef.current[name] = false; },
-      onPointerCancel: () => { controlsRef.current[name] = false; },
-      onPointerLeave: (e) => { if (e.buttons === 0) controlsRef.current[name] = false; },
+      onPointerDown: (e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        controlsRef.current[name] = true;
+        setter(true);
+      },
+      onPointerUp: (e) => {
+        e.preventDefault();
+        controlsRef.current[name] = false;
+        setter(false);
+      },
+      onPointerCancel: () => {
+        controlsRef.current[name] = false;
+        setter(false);
+      },
+      onLostPointerCapture: () => {
+        controlsRef.current[name] = false;
+        setter(false);
+      },
       onContextMenu: (e) => e.preventDefault(),
     };
+  }
+
+  function pointerAngle(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    return Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+  }
+
+  function onWheelDown(e) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const angle = pointerAngle(e);
+    wheelDragRef.current.active = true;
+    wheelDragRef.current.pointerId = e.pointerId;
+    wheelDragRef.current.lastAngle = angle;
+    wheelDragRef.current.rotation = wheelDeg;
+    controlsRef.current.wheelDragging = true;
+  }
+
+  function onWheelMove(e) {
+    const drag = wheelDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    const angle = pointerAngle(e);
+    const delta = normalizeDeg(angle - drag.lastAngle);
+    drag.lastAngle = angle;
+    drag.rotation = clamp(drag.rotation + delta, -MAX_WHEEL_DEG, MAX_WHEEL_DEG);
+    controlsRef.current.wheelSteer = drag.rotation / MAX_WHEEL_DEG;
+    setWheelDeg(drag.rotation);
+  }
+
+  function releaseWheel(e) {
+    const drag = wheelDragRef.current;
+    if (!drag.active) return;
+    if (e?.pointerId != null && drag.pointerId !== e.pointerId) return;
+    drag.active = false;
+    drag.pointerId = null;
+    controlsRef.current.wheelDragging = false;
+    controlsRef.current.wheelSteer = 0;
   }
 
   const min = Math.floor(elapsed / 60).toString().padStart(2, '0');
   const sec = (elapsed % 60).toString().padStart(2, '0');
   const mapX = clamp((carPos.x / WORLD_SIZE) * 100 + 50, 2, 98);
   const mapY = clamp((carPos.z / WORLD_SIZE) * 100 + 50, 2, 98);
+  const steerPct = Math.round((wheelDeg / MAX_WHEEL_DEG) * 100);
 
   return (
     <div className="app">
@@ -366,54 +484,100 @@ function App() {
       <div className="vignette" />
 
       <div className="topbar">
-        <div className="timer pill"><span>◷</span><b>{min}:{sec}</b></div>
-        <button className="iconBtn" onClick={togglePause} aria-label="Pause">{paused ? '▶' : 'Ⅱ'}</button>
-      </div>
-
-      <div className="mirrorFrame" aria-hidden="true" />
-
-      <div className="leftHud">
-        <button className="resetBtn" onClick={resetCar}>↻</button>
-        <div className="missionCard"><div className="star">★</div><div>FREE</div><small>DRIVE</small></div>
-      </div>
-
-      <div className="wheelCluster">
-        <div className="wheel" style={{ transform: `rotate(${steerVisual * 110}deg)` }}>
-          <div className="spoke s1" /><div className="spoke s2" /><div className="spoke s3" />
-          <div className="hub">DRIVE</div>
+        <div className="driveChip">
+          <span className="driveChipDot" />
+          <div><small>FREE DRIVE</small><b>{min}:{sec}</b></div>
         </div>
-        <div className="steerTouch steerLeft" {...bindHold('left')}>‹</div>
-        <div className="steerTouch steerRight" {...bindHold('right')}>›</div>
+        <div className="topActions">
+          <button className="glassIconBtn" onClick={resetCar} aria-label="車をリセット">↻</button>
+          <button className="glassIconBtn" onClick={togglePause} aria-label="一時停止">{paused ? '▶' : 'Ⅱ'}</button>
+        </div>
       </div>
 
-      <div className="speedPanel">
-        <div className="turnArrow">◀</div>
-        <div className="speedValue">{String(speedKmh).padStart(3, '0')}</div>
-        <div className="speedUnit">KM/H</div>
-        <div className="turnArrow">▶</div>
+      <div className="mirrorFrame" aria-hidden="true"><span className="mirrorGlint" /></div>
+
+      <div className="steerHud">
+        <div className="steerCaption">
+          <span>STEER</span>
+          <b>{steerPct === 0 ? 'CENTER' : steerPct < 0 ? `${Math.abs(steerPct)}% L` : `${steerPct}% R`}</b>
+        </div>
+        <div
+          className={`wheelTouchArea ${wheelDragRef.current.active ? 'dragging' : ''}`}
+          onPointerDown={onWheelDown}
+          onPointerMove={onWheelMove}
+          onPointerUp={releaseWheel}
+          onPointerCancel={releaseWheel}
+          onLostPointerCapture={releaseWheel}
+          onContextMenu={(e) => e.preventDefault()}
+          role="slider"
+          aria-label="ステアリング"
+          aria-valuemin={-100}
+          aria-valuemax={100}
+          aria-valuenow={steerPct}
+        >
+          <div className="wheelShadow" />
+          <div className="wheel" style={{ transform: `rotate(${wheelDeg}deg)` }}>
+            <div className="rimGrip g1" /><div className="rimGrip g2" /><div className="rimGrip g3" /><div className="rimGrip g4" />
+            <div className="spoke spokeTop" /><div className="spoke spokeLeft" /><div className="spoke spokeRight" />
+            <div className="hub"><span>SD</span></div>
+            <div className="wheelMarker" />
+          </div>
+        </div>
+        <div className="steerHint">指でハンドルを回す</div>
       </div>
 
-      <div className="minimap">
+      <div className="speedDeck">
+        <div className="speedMeta"><span>GEAR</span><b>{gear}</b></div>
+        <div className="speedReadout">
+          <strong>{String(speedKmh).padStart(3, '0')}</strong>
+          <span>km/h</span>
+        </div>
+        <div className="speedBars" aria-hidden="true">
+          {[0,1,2,3,4,5,6,7,8].map(i => <i key={i} className={speedKmh / 12 > i ? 'on' : ''} />)}
+        </div>
+      </div>
+
+      <div className="minimapPhone">
+        <div className="mapTop"><span>MAP</span><i /></div>
         <div className="mapInner">
           {mapRoads.map((p,i)=><div key={'h'+i} className="roadH" style={{ top: `${p}%` }} />)}
           {mapRoads.map((p,i)=><div key={'v'+i} className="roadV" style={{ left: `${p}%` }} />)}
           <div className="carDot" style={{ left: `${mapX}%`, top: `${mapY}%`, transform: `translate(-50%,-50%) rotate(${-carPos.heading}rad)` }}>▲</div>
         </div>
-        <div className="mapLabel">MAP</div>
       </div>
 
-      <div className="gearBox">
-        {['R','N','D'].map(g => <button key={g} className={gear === g ? 'active' : ''} onClick={()=>changeGear(g)}>{g}</button>)}
+      <div className="gearRail" aria-label="ギア選択">
+        <div className="gearTrack" />
+        {['R','N','D'].map(g => (
+          <button key={g} className={gear === g ? 'active' : ''} onClick={()=>changeGear(g)}>
+            <span>{g}</span>
+          </button>
+        ))}
       </div>
 
       <div className="pedals">
-        <button className="pedal brake" {...bindHold('brake')}><span>▥</span><b>BRAKE</b></button>
-        <button className="pedal accel" {...bindHold('accel')}><span>▥</span><b>PEDAL</b></button>
+        <button className={`pedal brake ${brakePressed ? 'pressed' : ''}`} {...bindPedal('brake', setBrakePressed)}>
+          <div className="pedalPlate">{[0,1,2,3,4].map(i => <i key={i} />)}</div>
+          <b>BRAKE</b>
+        </button>
+        <button className={`pedal accel ${accelPressed ? 'pressed' : ''}`} {...bindPedal('accel', setAccelPressed)}>
+          <div className="pedalPlate">{[0,1,2,3,4].map(i => <i key={i} />)}</div>
+          <b>ACCEL</b>
+        </button>
       </div>
 
-      <div className="help">PC: WASD / 矢印キー　　R/N/E: ギア</div>
-      <div className="landscapeHint">横画面にすると遊びやすくなります</div>
-      {paused && <div className="pauseOverlay"><div>PAUSED</div><button onClick={togglePause}>再開</button></div>}
+      <div className="desktopHelp">WASD / 矢印キー · E / N / R</div>
+      <div className="landscapeHint">横画面推奨</div>
+
+      {paused && (
+        <div className="pauseOverlay">
+          <div className="pauseCard">
+            <small>STREET DRIVE</small>
+            <strong>PAUSED</strong>
+            <button onClick={togglePause}>ドライブを再開</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
